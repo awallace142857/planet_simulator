@@ -774,8 +774,8 @@ for nRun in range(nSystems):
 						tK.append(planets[ii][key][jj][0])
 						Kmag.append(planets[ii][key][jj][1])
 					elif 'L' in key:
-                                                tL.append(planets[ii][key][jj][0])
-                                                Lmag.append(planets[ii][key][jj][1])
+                        tL.append(planets[ii][key][jj][0])
+                        Lmag.append(planets[ii][key][jj][1])
 			cols.append(pyfits.Column(name='magTime', format='E', array=np.array(tK)))
 			cols.append(pyfits.Column(name='K_Magnitude', format='E', array=np.array(Kmag)))
 			cols.append(pyfits.Column(name='L_Magnitude', format='E', array=np.array(Lmag)))
