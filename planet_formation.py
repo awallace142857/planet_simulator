@@ -334,7 +334,7 @@ def disk_limited(mass,c):
 	coeffs = [[-1.28161436,-1.62527386,-2.86926726],[-1.59541038,-2.7974245,-4.26371995],[-1.91234071,-3.54530977,-4.72537617]]
 	"""logFit1 = coeffs[0]*(np.log10(mass/1000))**2+coeffs[1]*np.log10(mass/1000)+coeffs[2]
 	coeffs = [-1.23,-8.97,-18.67]"""
-	logFit = coeffs[0][c]*(np.log10(mass))**2+coeffs[1][c]*np.log10(mass)+coeffs[2][c]
+	logFit = coeffs[c][0]*(np.log10(mass))**2+coeffs[c][1]*np.log10(mass)+coeffs[c][2]
 	return 10**logFit
 
 def rad_time(time,mass):
@@ -593,7 +593,7 @@ for nRun in range(nSystems):
 		continue
 	planets_init = [] #Initialise all existing planets
 	for planet in range(nPlanets):
-		start_time = 1e6*np.random.random() #When the planet starts accreting gas in years after time zero
+		start_time = 1e6*np.log(max_mass/m_final)/np.log(max_mass/min_mass) #When the planet starts accreting gas in years after time zero
 		mass_sep = mass_sep_dist(min_mass,max_mass,min_sep,max_sep,mass_power,sep_power1,sep_power2,const_1,cutoff) #Calculate random mass and separation from distribution
 		m_final = mass_sep[0] #Mass in MJ
 		semimajor = mass_sep[1] #Separation in AU
