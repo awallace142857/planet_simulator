@@ -7,7 +7,7 @@ from matplotlib import ticker
 import aplpy
 import matplotlib.cm as cm
 import astropy.constants as c, astropy.units as u
-inDir = 'mesa_values' #Directory Containing Mass, Radius, Entropy and Luminosity trends from MESA
+inDir = 'fitting' #Directory Containing Mass, Radius, Entropy and Luminosity trends from MESA and other fits
 def twoD_conv(f,g):
 	"""Convolution between two matrices"""
 	f_FFT = np.fft.rfft2(f)
@@ -134,8 +134,9 @@ def luminosity_evolution(mass,radius,t_vec):
 	
 	Returns
 	-------
-	lum: array
-		The planet's luminosity in L_sun as a function of time
+	[lum,slope,offset,intercept]: [array,array,array,array]
+		A list containing the planet's luminosity in L_sun
+		as well as the fit parameters each as a function of time
 	"""
 	global inDir
 	radStrings = []
@@ -432,84 +433,128 @@ def extreme_mass(sep,start_time,init_mass,disk_life,period,time_power,threshold,
 		t_1+=step
 	return mass
 
-def accretionMag(radius,mmDot,band):
-	"""Calculates the planet's magnitude for a particular band (L or K) during accretion.
-	Assumes the planet behaves as a blackbody.
+def burrows(mass,radius,age,band):
+	"""Calculates a planet's magnitude at a given time using
+	hot start models from Spiegel & Burrows 2012.  This takes 
+	data stored in text file 'burrows' which has magnitudes 
+	for several masses and ages and fits a trend to the
+	magnitude v time plots.
+	
+	It starts by finding coefficients for the 1MJ and 10MJ trends.
+	The slope is assumed to be independent of mass so is taken to be
+	the average of these two.  The y-intercept is assumed to increase 
+	logarithmically with mass and is calculated by taking the difference
+	between y-intercepts and multiplying by the log of the input mass.
+	
+	The radius according to Spiegel & Burrows 2012 is found using the file
+	'burrows_radii' and the magnitude is offset by an amount related to
+	the planet's actual radius.
 	
 	Parameters
 	----------
+	mass: float
+		The planet mass in MJ
 	radius: float
-		The planet's radius in RJ
-	mmDot: float
-		The accretion rate multiplied by the mass in MJ^2/yr
+		The planet radius in RJ
+	age: float
+		The planet age in Myr
 	band: str
-		The wavelength band
+		The wavelength band of the magnitude
+		At the moment, only 'L' and 'K' are possible
 	
 	Returns
 	-------
-	mag: float
-		The planet's absolute magnitude
+	fit: float
+		The magnitude at this particular age
 	"""
-	lum = 6.67e-11*mmDot*(1.898e27**2/(365.25*24*3600))/(radius*69911e3)
-	temp = (lum/(5.67e-8*4*np.pi*(radius*69911e3)**2))**0.25
-	h = 6.63e-34
-	k = 1.38e-23
-	light_speed = 3e8
-	if band=='L':
-		lower = light_speed/4.13e-6
-		upper = light_speed/3.43e-6
-	elif band=='K':
-		lower = light_speed/2.37e-6
-		upper = light_speed/2.03e-6
-	flux = 0
-	flux_Vega = 0
-	delta = (upper-lower)/100
-	T_Vega = 9602
-	R_Vega = 1.96e9
-	for ii in range(100):
-		flux += (2*h*(lower+delta*ii)**3/(light_speed**2))*(1/(np.exp(h*(lower+delta*ii)/(k*temp))-1))*delta
-		flux_Vega += (2*h*(lower+delta*ii)**3/(light_speed**2))*(1/(np.exp(h*(lower+delta*ii)/(k*T_Vega))-1))*delta
-	mag = -2.5*np.log10(flux*(radius*69911e3)**2/(flux_Vega*R_Vega**2))
-	return mag
+	global inDir
+	radText = open(inDir+'/burrows_radii','r')
+	offset = luminosity_evolution(mass,radius,age)[2]
+	ts = [[],[],[]]
+	rs = [[],[],[]]
+	el = -1
+	for line in radText:
+		entry = line.split(', ')
+		if 'MJ' not in line:
+			ts[el].append(float(entry[0]))
+			rs[el].append(float(entry[1]))
+		elif 'MJ' in line:
+			el+=1
+	slopes = []
+	intercepts = []
+	minR = 1.06
+	for ii in range(len(ts)):
+		ts[ii] = np.array(ts[ii])
+		rs[ii] = np.array(rs[ii])
+		coeffs = np.polyfit(np.log(ts[ii]),np.log(rs[ii]-minR),1)
+		slopes.append(coeffs[0])
+		intercepts.append(coeffs[1])
+	ms = np.array([1,5,10])
+	slopes = np.array(slopes)
+	intercepts = np.array(intercepts)
+	radSlopeCoeffs = np.polyfit(ms,slopes,1)
+	radIntCoeffs = np.polyfit(np.log(ms),np.log(intercepts+0.3),1)
+	radSlope = radSlopeCoeffs[0]*mass+radSlopeCoeffs[1]
+	radIntercept = np.exp(radIntCoeffs[0]*np.log(mass)+radIntCoeffs[1]-0.3)
+	radBurrows = np.exp(radSlope*np.log(age-offset)+radIntercept)+minR
+	text = open(inDir+'/burrows','r')
+	ages = []
+	masses = []
+	hotMags = []
+	for line in text:
+		entry = line.split(' ')
+		new_entry = []
+		for ii in range(len(entry)):
+			if len(entry[ii])>0:
+				new_entry.append(entry[ii])
+		entry = new_entry
+		ages.append(float(entry[1]))
+		masses.append(float(entry[2]))
+		if band=='L':
+			hotMags.append(float(entry[7]))
+		elif band=='K':
+			hotMags.append(float(entry[6]))
+	new_ages = []
+	new_masses = []
+	new_hot = []
+	for ii in range(len(ages)):
+		if ages[ii] not in new_ages:
+			new_ages.append(ages[ii])
+		if masses[ii] not in new_masses:
+			new_masses.append(masses[ii])
+			new_hot.append([])
 
-def formedMag(radius,luminosity,band):
-	"""Calculates the planet's magnitude for a particular band (L or K) after formation.
-	Assumes the planet behaves as a blackbody.
-	
-	Parameters
-	----------
-	radius: float
-		The planet's radius in RJ
-	luminosity: float
-		The planet's luminosity in W
-	band: str
-		The wavelength band
-	
-	Returns
-	-------
-	mag: float
-		The planet's absolute magnitude
-	"""
-	temp = (luminosity/(5.67e-8*4*np.pi*(radius*69911e3)**2))**0.25
-	h = 6.63e-34
-	k = 1.38e-23
-	light_speed = 3e8
-	if band=='L':
-		lower = light_speed/4.13e-6
-		upper = light_speed/3.43e-6
-	elif band=='K':
-		lower = light_speed/2.37e-6
-		upper = light_speed/2.03e-6
-	flux = 0
-	flux_Vega = 0
-	delta = (upper-lower)/100
-	T_Vega = 9602
-	R_Vega = 1.96e9
-	for ii in range(100):
-		flux += (2*h*(lower+delta*ii)**3/(light_speed**2))*(1/(np.exp(h*(lower+delta*ii)/(k*temp))-1))*delta
-		flux_Vega += (2*h*(lower+delta*ii)**3/(light_speed**2))*(1/(np.exp(h*(lower+delta*ii)/(k*T_Vega))-1))*delta
-	mag = -2.5*np.log10(flux*(radius*69911e3)**2/(flux_Vega*R_Vega**2))
-	return mag
+	new_ages = np.array(new_ages)
+	new_masses = np.array(new_masses)
+	for ii in range(len(ages)):
+		new_hot[np.where(new_masses==masses[ii])[0][0]].append(hotMags[ii])
+	new_hot = np.array(new_hot)
+	mags = new_hot
+	refCoeffs = []
+	bins = []
+	for ii in range(len(mags)):
+		refCoeffs.append(np.polyfit(np.log(new_ages-offset),mags[ii],1))
+	for ii in range(len(mags)+1):
+		if ii==0:
+			if mass<=new_masses[0]:
+				bin = 0
+				slope = refCoeffs[0][0]
+		elif ii==len(mags):
+			if mass>=new_masses[len(mags)-1]:
+				bin = len(mags)
+				slope = refCoeffs[len(mags)-1][0]
+		else:
+			if mass>=new_masses[ii-1] and mass<=new_masses[ii]:
+				bin = ii
+				slope = np.mean([refCoeffs[ii][0],refCoeffs[ii-1][0]])
+				
+	ratio = new_masses[len(mags)-1]/new_masses[0]
+	diff = refCoeffs[len(mags)-1][1]-refCoeffs[0][1]
+	newDiff = diff*np.log10(mass/new_masses[0])/np.log10(ratio)
+	coeffs = np.zeros(2)
+	coeffs = np.array([slope,refCoeffs[0][1]+newDiff])
+	fit = coeffs[0]*np.log(age-offset)+coeffs[1]-5*np.log10(radius/radBurrows)
+	return(fit)
 
 def local_density(m_disk,r_disk,separation,density_power):
 	"""Calculates the gas surface density at a given distance from star.
@@ -593,7 +638,7 @@ for nRun in range(nSystems):
 		continue
 	planets_init = [] #Initialise all existing planets
 	for planet in range(nPlanets):
-		start_time = 1e6*np.log(max_mass/m_final)/np.log(max_mass/min_mass) #When the planet starts accreting gas in years after time zero
+		start_time = step #When the planet starts accreting gas in years after time zero
 		mass_sep = mass_sep_dist(min_mass,max_mass,min_sep,max_sep,mass_power,sep_power1,sep_power2,const_1,cutoff) #Calculate random mass and separation from distribution
 		m_final = mass_sep[0] #Mass in MJ
 		semimajor = mass_sep[1] #Separation in AU
@@ -686,8 +731,8 @@ for nRun in range(nSystems):
 					else:
 						planets[ii]['radius'] = 4
 					#Magnitudes in L and K band
-					planets[ii]['magnitude_L'].append([time,accretionMag(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'L')])
-                    planets[ii]['magnitude_K'].append([time,accretionMag(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'K')])
+					planets[ii]['magnitude_L'].append([time,zhu(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'L')])
+                    planets[ii]['magnitude_K'].append([time,zhu(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'K')])
 					lum = G*planets[ii]['current_mass']*planets[ii]['Mdot']/planets[ii]['radius']
 					lum_watt = lum*2e3*(1.5e11**2)*2e27*(3e7**-3)
 					planets[ii]['energy_loss']+=step*365.25*24*3600*lum_watt
@@ -705,17 +750,18 @@ for nRun in range(nSystems):
 						#Calculate luminosity evolution
 						planets[ii]['t_vec'] = np.linspace(0,final_age-time*1e-6,(final_age*1e6-time)//step+1)
 						planets[ii]['t_el'] = 0 #Element to use when calling the luminosity vector
-						planets[ii]['lum_curve'] = luminosity_evolution(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'])
-
+						planets[ii]['lum_curve'] = luminosity_evolution(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'])[0]
+						planets[ii]['LMag_curve'] = burrows(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'],'L')
+						planets[ii]['KMag_curve'] = burrows(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'],'K')
 				if not planets[ii]['complete']:
 					planets[ii]['current_mass']+=planets[ii]['Mdot']*step #Add mass according to accretion rate
 				#Find maximum accretion rate
 				if planets[ii]['Mdot']>planets[ii]['max_accretion']:
 					planets[ii]['max_accretion'] = planets[ii]['Mdot']
 			if planets[ii]['complete']:
-				lum_watt = 3.828e26*planets[ii]['lum_curve'][planets[ii]['t_el']] #Luminosity in Watts
-				planets[ii]['magnitude_L'].append([time,formedMag(planets[ii]['radius'],lum_watt,'L')])
-				planets[ii]['magnitude_K'].append([time,formedMag(planets[ii]['radius'],lum_watt,'K')])
+				lum_watt = 3.828e26*planets[ii]['lum_curve'][planets[ii]['t_el']]
+				planets[ii]['magnitude_L'].append([time,planets[ii]['LMag_curve'][planets[ii]['t_el']]])
+				planets[ii]['magnitude_K'].append([time,planets[ii]['KMag_curve'][planets[ii]['t_el']]])
 				planets[ii]['t_el']+=1 #Increment element by 1
 			allTimes[ii].append(time/1e6)
 			allRates[ii].append(planets[ii]['Mdot'])
