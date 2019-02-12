@@ -27,7 +27,7 @@
 &controls
 
       use_gold_tolerances = .false.
-      which_atm_option = 'tau_10_tables'
+
       ! check for retries and backups as part of test_suite
       ! you can/should delete this for use outside of test_suite
          max_number_backups = 1
