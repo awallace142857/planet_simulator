@@ -282,7 +282,8 @@ def zhu(radius,mmDot,band):
 	fit: float
 		The magnitude of this planets
 	"""
-	zhuFile = open('zhu','r')
+	global inDir
+	zhuFile = open(inDir+'/zhu','r')
 	order = 1
 	rates = []
 	lums = []
