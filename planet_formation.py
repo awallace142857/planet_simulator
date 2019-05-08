@@ -184,7 +184,7 @@ def luminosity_evolution(mass,radius,t_vec):
 	intCoeffs = np.polyfit(np.log(ms),intercepts,1)
 	intercept = intCoeffs[0]*np.log(mass)+intCoeffs[1]
 	lum = np.exp(slope*np.log(t_vec-offset)+intercept)
-	return lum
+	return [lum,slope,offset,intercept]
 
 def mass_sep_dist(mass_min,mass_max,sep_min,sep_max,mass_power,sep_power1,sep_power2,const1,cutoff):
 	"""Randomly generates a planet's final mass and orbital radius
@@ -291,6 +291,10 @@ def zhu(radius,mmDot,band):
 		offset = len(rads)
 	elif band=='K':
 		offset = 0
+	elif band=='M':
+                offset = 2*len(rads)
+        elif band=='N':
+                offset = 3*len(rads)
 	for line in zhuFile:
 		entry = line.split(' ')
 		rates.append(float(entry[0]))
@@ -514,6 +518,10 @@ def burrows(mass,radius,age,band):
 			hotMags.append(float(entry[7]))
 		elif band=='K':
 			hotMags.append(float(entry[6]))
+		elif band=='M':
+                        hotMags.append(float(entry[8]))
+                elif band=='N':
+                        hotMags.append(float(entry[9]))
 	new_ages = []
 	new_masses = []
 	new_hot = []
@@ -673,12 +681,14 @@ for nRun in range(nSystems):
 		if total_mass<m_final:
 			time_power-=0.001
 			total_mass = extreme_mass(semimajor,start_time,init_mass,disk_life,period,time_power,crit_mass,density_0,coeff)
-		#Initialise magnitude arrays
-		magL = []
+	#Initialise magnitude arrays
+	magL = []
         magK = []
+	magN = []
+	magM = []
         #Store parameters in a dictionary
 		if m_final<=total_mass:
-			planets_init.append({'semimajor':semimajor,'age':0,'energy_loss':0,'sound_speed':sound_speed,'final_entropy':final_entropy,'max_accretion':acc,'period':period,'pa':angle,'magnitude_L':magL,'magnitude_K':magK,'current_mass':init_mass,'init_mass':init_mass,'final_mass':m_final,'radius':rad,'Mdot':acc,'T_disk':T_disk,'time_power':time_power,'coeff':coeff,'start_date':str(start_time),'disk_life':disk_life,'completion_date':'N/A','complete':False})
+			planets_init.append({'semimajor':semimajor,'age':0,'energy_loss':0,'sound_speed':sound_speed,'final_entropy':final_entropy,'max_accretion':acc,'period':period,'pa':angle,'magnitude_L':magL,'magnitude_K':magK,'magnitude_M':magM,'magnitude_N':magN,'current_mass':init_mass,'init_mass':init_mass,'final_mass':m_final,'radius':rad,'Mdot':acc,'T_disk':T_disk,'time_power':time_power,'coeff':coeff,'start_date':str(start_time),'disk_life':disk_life,'completion_date':'N/A','complete':False})
 		else:
 			print(m_final,total_mass,semimajor)
 	#Extract all planet start times for this system
@@ -721,6 +731,8 @@ for nRun in range(nSystems):
 					planets[ii]['energy_loss']+=step*365.25*24*3600*lum_watt
 					planets[ii]['magnitude_L'].append([time,1000])
 					planets[ii]['magnitude_K'].append([time,1000])
+					planets[ii]['magnitude_M'].append([time,1000])
+					planets[ii]['magnitude_N'].append([time,1000])
 				else:
 					#During runaway accretion, calculate accretion rate based on Lissauer 2009
 					planets[ii]['Mdot'] = surface_density*(planets[ii]['semimajor']**2)*disk_limited(planets[ii]['current_mass'],planets[ii]['coeff'])/planets[ii]['period']
@@ -732,7 +744,9 @@ for nRun in range(nSystems):
 						planets[ii]['radius'] = 4
 					#Magnitudes in L and K band
 					planets[ii]['magnitude_L'].append([time,zhu(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'L')])
-                    planets[ii]['magnitude_K'].append([time,zhu(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'K')])
+        				planets[ii]['magnitude_K'].append([time,zhu(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'K')])
+					planets[ii]['magnitude_M'].append([time,zhu(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'M')])
+        				planets[ii]['magnitude_N'].append([time,zhu(planets[ii]['radius'],planets[ii]['current_mass']*planets[ii]['Mdot'],'N')])
 					lum = G*planets[ii]['current_mass']*planets[ii]['Mdot']/planets[ii]['radius']
 					lum_watt = lum*2e3*(1.5e11**2)*2e27*(3e7**-3)
 					planets[ii]['energy_loss']+=step*365.25*24*3600*lum_watt
@@ -753,6 +767,8 @@ for nRun in range(nSystems):
 						planets[ii]['lum_curve'] = luminosity_evolution(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'])[0]
 						planets[ii]['LMag_curve'] = burrows(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'],'L')
 						planets[ii]['KMag_curve'] = burrows(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'],'K')
+						planets[ii]['MMag_curve'] = burrows(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'],'M')
+						planets[ii]['NMag_curve'] = burrows(planets[ii]['current_mass'],planets[ii]['radius'],planets[ii]['t_vec'],'N')
 				if not planets[ii]['complete']:
 					planets[ii]['current_mass']+=planets[ii]['Mdot']*step #Add mass according to accretion rate
 				#Find maximum accretion rate
@@ -762,6 +778,8 @@ for nRun in range(nSystems):
 				lum_watt = 3.828e26*planets[ii]['lum_curve'][planets[ii]['t_el']]
 				planets[ii]['magnitude_L'].append([time,planets[ii]['LMag_curve'][planets[ii]['t_el']]])
 				planets[ii]['magnitude_K'].append([time,planets[ii]['KMag_curve'][planets[ii]['t_el']]])
+				planets[ii]['magnitude_M'].append([time,planets[ii]['MMag_curve'][planets[ii]['t_el']]])
+				planets[ii]['magnitude_N'].append([time,planets[ii]['NMag_curve'][planets[ii]['t_el']]])
 				planets[ii]['t_el']+=1 #Increment element by 1
 			allTimes[ii].append(time/1e6)
 			allRates[ii].append(planets[ii]['Mdot'])
